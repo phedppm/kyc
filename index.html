@@ -122,7 +122,7 @@
             gap: 10px;
         }
         
-        /* New Admin Module Style */
+        /* Admin Module Style */
         .admin-box {
             background-color: var(--warning-bg);
             border: 1px solid var(--warning-border);
@@ -259,7 +259,7 @@
             <div class="form-group"><label>Address</label><input type="text" id="address" class="network-data" readonly></div>
             
             <div class="form-group">
-                <label>Building Type</label>
+                <label>Building Type <span style="color:red">*</span></label>
                 <select id="buildingType">
                     <option value="">Select Type</option>
                     <option value="Single Room">Single Room</option>
@@ -269,10 +269,10 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>Number of Separation Needed</label>
+                <label>Number of Separation Needed <span style="color:red">*</span></label>
                 <select id="needSeparation">
                     <option value="">Select Count</option>
-                    </select>
+                </select>
             </div>
 
             <div class="section-title">
@@ -465,6 +465,15 @@
             const dtrLong = document.getElementById('dtrLong').value;
             const custLat = document.getElementById('custLat').value;
             const custLong = document.getElementById('custLong').value;
+            
+            // --- NEW COMPULSORY FIELDS CHECK ---
+            const buildingType = document.getElementById('buildingType').value;
+            const needSeparation = document.getElementById('needSeparation').value;
+
+            if (!buildingType) { showModal("Please select a Building Type."); return; }
+            if (!needSeparation) { showModal("Please select Number of Separation."); return; }
+            // ----------------------------------
+
             const gpsRegex = /^-?\d+\.\d{5,}$/;
 
             if(!gpsRegex.test(dtrLat) || !gpsRegex.test(dtrLong)) { showModal("Invalid DTR Coordinates."); return; }
@@ -487,8 +496,8 @@
                 custEmail: document.getElementById('custEmail').value,
                 custLat: custLat,
                 custLong: custLong,
-                buildingType: document.getElementById('buildingType').value,
-                needSeparation: document.getElementById('needSeparation').value,
+                buildingType: buildingType,
+                needSeparation: needSeparation,
                 officer: document.getElementById('loggedInUser').textContent
             };
 
