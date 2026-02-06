@@ -301,8 +301,12 @@
         </div>
     </div>
 
-    <script>
-        const CLOUD_FUNCTION_URL = "https://phedkyc-1017714579717.us-central1.run.app"; 
+   <script>
+        // 1. NODE.JS FUNCTION (Handles Login, Search, Submit)
+        const NODE_API_URL = "https://phedkyc-1017714579717.us-central1.run.app"; 
+        
+        // 2. PYTHON FUNCTION (Handles Excel Upload / Billing Download)
+        const PYTHON_API_URL = "https://nmdbilling-1017714579717.us-central1.run.app"; 
 
         // 1. Populate 'Separation' Dropdown on Load
         (function() {
@@ -324,7 +328,8 @@
 
             showSpinner();
             try {
-                const response = await fetch(CLOUD_FUNCTION_URL, {
+                // USE NODE API FOR LOGIN
+                const response = await fetch(NODE_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'login', email: email, pin: pin })
@@ -337,7 +342,6 @@
                     document.getElementById('loginPage').classList.add('hidden');
                     document.getElementById('appPage').classList.remove('hidden');
 
-                    // CHECK FOR ADMIN RIGHTS
                     if (result.canUpdateSource) {
                         document.getElementById('adminModule').classList.remove('hidden');
                     }
@@ -354,18 +358,12 @@
 
         function resetForm() {
             document.getElementById('kycForm').classList.add('hidden');
-            
-            // Clear Inputs
             const ids = ['region','feeder33','feeder11','dtrName','dtrId','dtrLat','dtrLong',
                          'custName','accountNo','address','custPhone','custEmail','custLat','custLong',
-                         'buildingType', 'needSeparation']; // Added new fields
+                         'buildingType', 'needSeparation']; 
             ids.forEach(id => document.getElementById(id).value = "");
-            
-            // Reset Buttons
             resetBtn(document.getElementById('btnCaptureDTR'), 'dtr');
             resetBtn(document.getElementById('btnCaptureCust'), 'cust');
-            
-            // Reset Submit Button Text
             document.getElementById('btnSubmit').innerHTML = '<span class="material-icons">cloud_upload</span> SUBMIT KYC REPORT';
         }
 
@@ -377,7 +375,8 @@
             showSpinner();
             
             try {
-                const response = await fetch(CLOUD_FUNCTION_URL, {
+                // USE NODE API FOR SEARCH
+                const response = await fetch(NODE_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'search', query: query })
@@ -399,8 +398,6 @@
 
         function populateForm(data) {
             document.getElementById('kycForm').classList.remove('hidden');
-            
-            // Basic Info
             document.getElementById('region').value = data.region || "";
             document.getElementById('feeder33').value = data.feeder33 || "";
             document.getElementById('feeder11').value = data.feeder11 || "";
@@ -410,20 +407,16 @@
             document.getElementById('accountNo').value = data.accountNo || "";
             document.getElementById('address').value = data.address || "";
 
-            // DTR Coords (Pre-fill)
             if(data.dtrLat && data.dtrLong) {
                 document.getElementById('dtrLat').value = data.dtrLat;
                 document.getElementById('dtrLong').value = data.dtrLong;
             }
 
-            // --- VISITED DATA (Pre-fill if exists) ---
             if(data.isVisited) {
                 document.getElementById('custPhone').value = data.custPhone || "";
                 document.getElementById('custEmail').value = data.custEmail || "";
                 document.getElementById('custLat').value = data.custLat || "";
                 document.getElementById('custLong').value = data.custLong || "";
-                
-                // Change Submit Button to "UPDATE"
                 document.getElementById('btnSubmit').innerHTML = '<span class="material-icons">update</span> UPDATE KYC REPORT';
                 showModal("Record found! Previous data loaded. You can update details if needed.");
             }
@@ -431,15 +424,12 @@
 
         function captureGPS(type) {
             if (!navigator.geolocation) { showModal("Geolocation not supported."); return; }
-
             const btnId = type === 'dtr' ? 'btnCaptureDTR' : 'btnCaptureCust';
             const btn = document.getElementById(btnId);
-            
             btn.disabled = true;
             btn.innerHTML = "Acquiring Lock...";
 
             const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     const accuracy = position.coords.accuracy;
@@ -477,12 +467,8 @@
             const custLong = document.getElementById('custLong').value;
             const gpsRegex = /^-?\d+\.\d{5,}$/;
 
-            if(!gpsRegex.test(dtrLat) || !gpsRegex.test(dtrLong)) {
-                showModal("Invalid DTR Coordinates. Must have 5 decimal places."); return;
-            }
-            if(!gpsRegex.test(custLat) || !gpsRegex.test(custLong)) {
-                showModal("Invalid Customer Coordinates. Must have 5 decimal places."); return;
-            }
+            if(!gpsRegex.test(dtrLat) || !gpsRegex.test(dtrLong)) { showModal("Invalid DTR Coordinates."); return; }
+            if(!gpsRegex.test(custLat) || !gpsRegex.test(custLong)) { showModal("Invalid Customer Coordinates."); return; }
 
             showSpinner();
             
@@ -501,14 +487,14 @@
                 custEmail: document.getElementById('custEmail').value,
                 custLat: custLat,
                 custLong: custLong,
-                // NEW FIELDS
                 buildingType: document.getElementById('buildingType').value,
                 needSeparation: document.getElementById('needSeparation').value,
                 officer: document.getElementById('loggedInUser').textContent
             };
 
             try {
-                const response = await fetch(CLOUD_FUNCTION_URL, {
+                // USE NODE API FOR SUBMIT
+                const response = await fetch(NODE_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'submit', formData: formData })
@@ -529,11 +515,10 @@
             }
         }
 
-        // --- NEW: Excel Upload Logic ---
+        // --- EXCEL UPLOAD LOGIC ---
         function processExcelUpload() {
             const fileInput = document.getElementById('excelFile');
             const file = fileInput.files[0];
-            
             if (!file) { showModal("Please select an Excel file first."); return; }
 
             showSpinner();
@@ -548,7 +533,6 @@
                     const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
                     if(jsonData.length === 0) throw new Error("Sheet is empty");
-
                     sendExcelData(jsonData);
                 } catch (err) {
                     hideSpinner();
@@ -561,7 +545,8 @@
 
         async function sendExcelData(rows) {
             try {
-                const res = await fetch(CLOUD_FUNCTION_URL, {
+                // USE PYTHON API FOR UPLOAD
+                const res = await fetch(PYTHON_API_URL, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ 
@@ -574,7 +559,7 @@
                 
                 if(result.success) {
                     showModal(result.message);
-                    document.getElementById('excelFile').value = ""; // clear input
+                    document.getElementById('excelFile').value = ""; 
                 } else {
                     showModal("Update Failed: " + (result.error || "Unknown error"));
                 }
