@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHED Gamma 1&2 KYC App</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <style>
         :root {
             --primary-color: #0056b3;
@@ -14,6 +16,9 @@
             --light-color: #f8faff;
             --error-color: #dc3545;
             --success-color: #28a745;
+            --warning-bg: #fff3cd;
+            --warning-text: #856404;
+            --warning-border: #ffeeba;
             --shadow: 0 4px 20px rgba(0, 86, 179, 0.15);
             --transition: all 0.3s ease;
         }
@@ -52,6 +57,9 @@
         .btn:disabled { background-color: #ccc; cursor: not-allowed; transform: none; box-shadow: none; }
         .btn-secondary { background-color: #6c757d; box-shadow: none; }
         .btn-secondary:hover { background-color: #5a6268; }
+        
+        .btn-admin { background-color: #d39e00; }
+        .btn-admin:hover { background-color: #c69500; }
 
         .container {
             max-width: 600px;
@@ -74,7 +82,7 @@
             background-color: var(--light-color);
             transition: var(--transition);
         }
-        input:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 2px rgba(0, 86, 179, 0.2);
@@ -112,6 +120,16 @@
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        
+        /* New Admin Module Style */
+        .admin-box {
+            background-color: var(--warning-bg);
+            border: 1px solid var(--warning-border);
+            color: var(--warning-text);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
         }
 
         #spinnerOverlay {
@@ -187,6 +205,19 @@
             </div>
         </div>
 
+        <div id="adminModule" class="admin-box hidden">
+            <div style="font-weight: bold; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                <span class="material-icons">admin_panel_settings</span> Source Database Update
+            </div>
+            <p style="font-size: 13px; margin: 0 0 10px 0;">Upload Excel file to update or append records.</p>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <input type="file" id="excelFile" accept=".xlsx, .xls" style="background: white;">
+            </div>
+            <button class="btn btn-admin" onclick="processExcelUpload()">
+                <span class="material-icons">upload_file</span> Upload & Process
+            </button>
+        </div>
+
         <div class="form-group" style="background: var(--light-color); padding: 20px; border-radius: 12px; border: 1px solid #d0e0ff;">
             <label>Search Account or Meter Number</label>
             <div style="display: flex; gap: 10px;">
@@ -227,6 +258,23 @@
             <div class="form-group"><label>Account / Meter No</label><input type="text" id="accountNo" class="network-data" readonly></div>
             <div class="form-group"><label>Address</label><input type="text" id="address" class="network-data" readonly></div>
             
+            <div class="form-group">
+                <label>Building Type</label>
+                <select id="buildingType">
+                    <option value="">Select Type</option>
+                    <option value="Single Room">Single Room</option>
+                    <option value="Multiple Rooms">Multiple Rooms</option>
+                    <option value="Flats Bungalo">Flats Bungalo</option>
+                    <option value="Duplex">Duplex</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Number of Separation Needed</label>
+                <select id="needSeparation">
+                    <option value="">Select Count</option>
+                    </select>
+            </div>
+
             <div class="section-title">
                 <span class="material-icons">contact_phone</span> Contact Details
             </div>
@@ -256,6 +304,17 @@
     <script>
         const CLOUD_FUNCTION_URL = "https://phedkyc-1017714579717.us-central1.run.app"; 
 
+        // 1. Populate 'Separation' Dropdown on Load
+        (function() {
+            const select = document.getElementById('needSeparation');
+            for(let i=1; i<=30; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.innerText = i;
+                select.appendChild(opt);
+            }
+        })();
+
         async function handleLogin() {
             const email = document.getElementById("loginEmail").value.trim();
             const pin = document.getElementById("loginPin").value.trim();
@@ -277,6 +336,11 @@
                     document.getElementById('loggedInUser').textContent = result.userName;
                     document.getElementById('loginPage').classList.add('hidden');
                     document.getElementById('appPage').classList.remove('hidden');
+
+                    // CHECK FOR ADMIN RIGHTS
+                    if (result.canUpdateSource) {
+                        document.getElementById('adminModule').classList.remove('hidden');
+                    }
                 } else {
                     showModal(result.message || "Login Failed");
                 }
@@ -288,13 +352,13 @@
 
         function logout() { location.reload(); }
 
-        // --- NEW: Reset Form Function ---
         function resetForm() {
             document.getElementById('kycForm').classList.add('hidden');
             
             // Clear Inputs
             const ids = ['region','feeder33','feeder11','dtrName','dtrId','dtrLat','dtrLong',
-                         'custName','accountNo','address','custPhone','custEmail','custLat','custLong'];
+                         'custName','accountNo','address','custPhone','custEmail','custLat','custLong',
+                         'buildingType', 'needSeparation']; // Added new fields
             ids.forEach(id => document.getElementById(id).value = "");
             
             // Reset Buttons
@@ -309,9 +373,7 @@
             const query = document.getElementById("searchInput").value.trim();
             if(!query) { showModal("Please enter an Account or Meter Number."); return; }
 
-            // Step 1: Clear old data
             resetForm();
-
             showSpinner();
             
             try {
@@ -399,8 +461,7 @@
         }
 
         function resetBtn(btn, type) {
-            if(!btn) return; // Guard for utility usage
-            // Convert 'dtr' -> 'DTR' for button text
+            if(!btn) return;
             const label = type === 'dtr' ? 'DTR' : 'CUSTOMER';
             btn.disabled = false;
             btn.innerHTML = `<span class="material-icons">my_location</span> Capture ${label} Coordinates`;
@@ -440,6 +501,9 @@
                 custEmail: document.getElementById('custEmail').value,
                 custLat: custLat,
                 custLong: custLong,
+                // NEW FIELDS
+                buildingType: document.getElementById('buildingType').value,
+                needSeparation: document.getElementById('needSeparation').value,
                 officer: document.getElementById('loggedInUser').textContent
             };
 
@@ -462,6 +526,61 @@
             } catch (e) {
                 hideSpinner();
                 showModal("Submission Error: " + e.message);
+            }
+        }
+
+        // --- NEW: Excel Upload Logic ---
+        function processExcelUpload() {
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            
+            if (!file) { showModal("Please select an Excel file first."); return; }
+
+            showSpinner();
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    if(jsonData.length === 0) throw new Error("Sheet is empty");
+
+                    sendExcelData(jsonData);
+                } catch (err) {
+                    hideSpinner();
+                    console.error(err);
+                    showModal("Error reading Excel file: " + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function sendExcelData(rows) {
+            try {
+                const res = await fetch(CLOUD_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        action: 'updateSource', 
+                        rows: rows 
+                    })
+                });
+                const result = await res.json();
+                hideSpinner();
+                
+                if(result.success) {
+                    showModal(result.message);
+                    document.getElementById('excelFile').value = ""; // clear input
+                } else {
+                    showModal("Update Failed: " + (result.error || "Unknown error"));
+                }
+            } catch(e) {
+                hideSpinner();
+                showModal("Server Error: " + e.message);
             }
         }
 
